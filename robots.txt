@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://imam3542.github.io/labelcrop-pro/sitemap.xml
