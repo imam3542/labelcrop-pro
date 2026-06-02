@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>LabelCrop Pro | Business Label Extractor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(145deg, #F8FAFE 0%, #EEF2F8 100%); }
+        .upload-zone { transition: all 0.2s ease; cursor: pointer; }
+        .upload-zone.drag-over { border-color: #7C3AED !important; background: rgba(124, 58, 237, 0.08) !important; transform: scale(1.01); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        .stat-card { transition: all 0.2s ease; background: white; border: 1px solid #e2e8f0; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); border-color: #cbd5e1; }
+        .btn-primary { transition: all 0.2s ease; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(124,58,237,0.3); }
+        .processing-step { transition: all 0.2s ease; }
+        .dark .bg-white { background-color: #1e293b; }
+        .dark .text-gray-600 { color: #94a3b8; }
+        .dark .bg-gray-50 { background-color: #0f172a; }
+        .dark .border-gray-100 { border-color: #334155; }
+        .dark .stat-card { background: #1e293b; border-color: #334155; }
+    </style>
+</head>
+<body>
+
+<nav class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm">
+    <div class="max-w-6xl mx-auto px-4 md:px-6 py-3 md:py-4 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <div class="w-3 h-3 bg-indigo-600 rounded-full"></div>
+            <span class="text-xl font-bold bg-gradient-to-r from-purple-700 to-indigo-700 bg-clip-text text-transparent">LabelCrop Pro</span>
+            <span class="hidden md:inline-block text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full ml-2">Business</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <button id="darkModeToggle" class="text-gray-500 hover:text-gray-700 p-2 rounded-lg transition">
+                <i class="fas fa-moon"></i>
+            </button>
+        </div>
+    </div>
+</nav>
+
+<main class="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-10">
+    <div class="animate-fade-in">
+        <!-- Upload Section -->
+        <div id="uploadSection" class="mb-8">
+            <div id="meeshoUploadZone" class="border-2 border-dashed border-purple-300 rounded-2xl p-8 md:p-12 text-center bg-purple-50/20 hover:bg-purple-50/40 transition upload-zone">
+                <i class="fas fa-file-pdf text-5xl text-purple-500 mb-4"></i>
+                <p class="text-xl font-semibold text-gray-700">Drop your PDF here</p>
+                <p class="text-gray-500 text-sm mt-2">Meesho invoice or exchange labels</p>
+                <input type="file" id="meeshoFileInput" accept="application/pdf" class="hidden">
+                <button type="button" id="meeshoChooseBtn" class="mt-6 px-8 py-3 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition shadow-md btn-primary">Choose File</button>
+                <div id="fileInfo" class="mt-4 text-sm text-gray-500 hidden">
+                    <i class="fas fa-file-pdf text-red-500"></i> <span id="fileName"></span> · <span id="fileSize"></span> · <span id="pageCount"></span> pages
+                </div>
+            </div>
+        </div>
+
+        <!-- Processing Status -->
+        <div id="processingStatus" class="hidden bg-white rounded-2xl shadow-lg p-6 mb-8 border border-gray-100">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                <h3 class="font-semibold text-gray-800">Processing PDF...</h3>
+            </div>
+            <div class="mb-3">
+                <div class="flex justify-between text-sm mb-1">
+                    <span class="text-gray-600">Progress</span>
+                    <span id="progressPercent" class="font-medium text-purple-600">0%</span>
+                </div>
+                <progress id="progressBar" value="0" max="100" class="w-full h-2 rounded-full"></progress>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mt-4 pt-3 border-t">
+                <div><span class="text-xs text-gray-500">Page</span><div class="text-lg font-semibold" id="currentPageNum">0</div></div>
+                <div><span class="text-xs text-gray-500">Valid</span><div class="text-lg font-semibold text-green-600" id="validCount">0</div></div>
+                <div><span class="text-xs text-gray-500">Review</span><div class="text-lg font-semibold text-yellow-600" id="reviewCount">0</div></div>
+                <div><span class="text-xs text-gray-500">Remaining</span><div class="text-lg font-semibold text-gray-700" id="timeRemaining">--</div></div>
+            </div>
+            <div id="statusMessage" class="mt-3 text-sm text-gray-500"></div>
+        </div>
+
+        <!-- Results Dashboard -->
+        <div id="resultsDashboard" class="hidden mb-8">
+            <div class="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 mb-6">
+                <div class="flex items-center gap-3 mb-5">
+                    <i class="fas fa-check-circle text-green-500 text-2xl"></i>
+                    <h2 class="text-xl font-bold text-gray-800">PDF Processed Successfully</h2>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div class="stat-card rounded-xl p-4 text-center">
+                        <i class="fas fa-file-alt text-purple-400 text-xl mb-2"></i>
+                        <div class="text-2xl font-bold text-gray-800" id="resultTotalPages">0</div>
+                        <div class="text-xs text-gray-500">Total Pages</div>
+                    </div>
+                    <div class="stat-card rounded-xl p-4 text-center">
+                        <i class="fas fa-check-circle text-green-500 text-xl mb-2"></i>
+                        <div class="text-2xl font-bold text-green-600" id="resultValid">0</div>
+                        <div class="text-xs text-gray-500">Valid Orders</div>
+                    </div>
+                    <div class="stat-card rounded-xl p-4 text-center">
+                        <i class="fas fa-exclamation-triangle text-yellow-500 text-xl mb-2"></i>
+                        <div class="text-2xl font-bold text-yellow-600" id="resultReview">0</div>
+                        <div class="text-xs text-gray-500">Review Required</div>
+                    </div>
+                    <div class="stat-card rounded-xl p-4 text-center">
+                        <i class="fas fa-truck text-blue-500 text-xl mb-2"></i>
+                        <div class="text-2xl font-bold text-blue-600" id="resultPartners">0</div>
+                        <div class="text-xs text-gray-500">Partners Found</div>
+                    </div>
+                    <div class="stat-card rounded-xl p-4 text-center">
+                        <i class="fas fa-clock text-gray-500 text-xl mb-2"></i>
+                        <div class="text-xl font-mono font-bold text-gray-700" id="resultTime">--</div>
+                        <div class="text-xs text-gray-500">Processing Time</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Partner Summary -->
+            <div id="partnerSummary" class="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 mb-6">
+                <h3 class="font-semibold text-gray-800 mb-4 flex items-center gap-2"><i class="fas fa-truck text-blue-500"></i> Delivery Partners</h3>
+                <div id="partnerGrid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+            </div>
+
+            <!-- Download Section -->
+            <div class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-2xl p-6 border border-purple-200">
+                <h3 class="font-semibold text-gray-800 mb-4 text-center md:text-left">Download Extracted Data</h3>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                    <button id="downloadPdfBtn" class="flex-1 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition shadow-md btn-primary text-center">
+                        <i class="fas fa-cut mr-2"></i> Download Labels PDF
+                    </button>
+                    <button id="downloadExcelBtn" class="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition shadow-md btn-primary text-center">
+                        <i class="fas fa-file-excel mr-2"></i> Download Excel Report
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 text-center mt-4">Cropped PDF with clean label areas · Excel with SKU, Size, Qty, Color, Order No.</p>
+            </div>
+        </div>
+
+        <!-- Debug Toggle (hidden by default, accessible via small link) -->
+        <div class="text-center mt-4">
+            <button id="debugToggleBtn" class="text-xs text-gray-400 hover:text-gray-600 transition"><i class="fas fa-bug"></i> Debug Console</button>
+        </div>
+        <div id="debugPanel" class="hidden mt-4 bg-gray-900 rounded-xl overflow-hidden">
+            <div class="bg-gray-800 px-4 py-2 flex justify-between items-center">
+                <span class="text-green-400 text-xs font-mono"><i class="fas fa-terminal"></i> Debug Log</span>
+                <button id="clearDebugBtn" class="text-gray-400 text-xs hover:text-white">Clear</button>
+            </div>
+            <div id="debugContent" class="p-3 text-green-300 text-xs font-mono max-h-64 overflow-y-auto" style="background:#0f172a;">Ready.</div>
+        </div>
+    </div>
+</main>
+
+<script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js";
+    const { PDFDocument } = PDFLib;
+
+    // Core extraction logic (unchanged, production-proven)
+    const VALID_SIZES = new Set(['Free Size', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '4XL', '5XL', '6XL']);
+    function normalizeSize(t) { 
+        const trimmed = t.trim();
+        if (VALID_SIZES.has(trimmed)) return trimmed;
+        const upper = trimmed.toUpperCase();
+        if (upper === 'FREE SIZE') return 'Free Size';
+        if (upper === 'S') return 'S';
+        if (upper === 'M') return 'M';
+        if (upper === 'L') return 'L';
+        if (upper === 'XL') return 'XL';
+        if (upper === 'XXL') return 'XXL';
+        if (upper === 'XXXL') return 'XXXL';
+        if (upper === '4XL') return '4XL';
+        if (upper === '5XL') return '5XL';
+        if (upper === '6XL') return '6XL';
+        return null;
+    }
+
+    function parseProductRow(lineText) {
+        if (!lineText || !lineText.trim()) return null;
+        let tokens = lineText.trim().split(/\s+/);
+        let orderNo = null, orderIdx = -1;
+        for (let i = tokens.length-1; i>=0; i--) {
+            if (/^\d+_\d+$/.test(tokens[i]) || /^\d{10,}(?:_\d+)?$/.test(tokens[i])) {
+                orderNo = tokens[i]; orderIdx = i; break;
+            }
+        }
+        if (!orderNo) return null;
+        let qty = null, qtyIdx = -1;
+        for (let i = orderIdx-1; i>=0; i--) {
+            if (/^\d+$/.test(tokens[i]) && parseInt(tokens[i])>0) {
+                qty = tokens[i]; qtyIdx = i; break;
+            }
+        }
+        if (!qty) return null;
+        let size = null, sizeIdx = -1;
+        for (let i = qtyIdx-1; i>=0; i--) {
+            if (i>=1 && tokens[i-1]==="Free" && tokens[i]==="Size") {
+                size = "Free Size"; sizeIdx = i;
+                const merged = [...tokens.slice(0,i-1), "Free Size", ...tokens.slice(i+1)];
+                tokens = merged;
+                orderIdx = tokens.findIndex(t=>t===orderNo);
+                qtyIdx = tokens.findIndex(t=>t===qty);
+                sizeIdx = tokens.findIndex(t=>t==="Free Size");
+                break;
+            }
+            const norm = normalizeSize(tokens[i]);
+            if (norm) { size = norm; sizeIdx = i; break; }
+        }
+        if (!size) return null;
+        let colorTokens = [];
+        for (let i = qtyIdx+1; i < orderIdx; i++) {
+            let tok = tokens[i].trim();
+            if (tok && !/^\d+$/.test(tok) && !normalizeSize(tok)) colorTokens.push(tok);
+        }
+        let color = colorTokens.length ? colorTokens.join(' ') : 'NA';
+        let skuTokens = tokens.slice(0, sizeIdx);
+        let sku = skuTokens.length ? skuTokens.join(' ').trim() : 'NA';
+        const forbidden = ["TAX INVOICE", "BILL TO", "SHIP TO", "Customer Address", "Product Details", "Exchange"];
+        if (forbidden.some(f => sku.toUpperCase().includes(f))) return null;
+        if (sku === "NA" || sku.length < 1) return null;
+        return { sku, size, qty: parseInt(qty), color, orderNo };
+    }
+
+    async function extractFromPage(page, pageNum, debugLog) {
+        const textContent = await page.getTextContent();
+        const fullText = textContent.items.map(i=>i.str).join(' ');
+        const hasTaxInvoice = fullText.includes("TAX INVOICE");
+        const hasExchange = fullText.includes("Exchange") && !hasTaxInvoice;
+        const pageType = hasTaxInvoice ? "A" : (hasExchange ? "B" : "UNKNOWN");
+        const headerMatch = fullText.match(/SKU\s+Size\s+Qty\s+Color\s+Order No\.?/i);
+        if (!headerMatch) return { valid: false, error: "No valid Meesho label found", pageType };
+        let remaining = fullText.substring(headerMatch.index + headerMatch[0].length);
+        let productRow = null;
+        if (pageType === "A") {
+            const taxMatch = remaining.match(/TAX\s+INVOICE/i);
+            if (taxMatch) remaining = remaining.substring(0, taxMatch.index);
+            const lines = remaining.split(/\s*\n\s*/);
+            for (let l of lines) {
+                if (l.trim() && !l.includes("TAX INVOICE") && !l.includes("Product Details")) {
+                    productRow = l.trim(); break;
+                }
+            }
+        } else {
+            const lines = remaining.split(/\s*\n\s*/);
+            for (let l of lines) {
+                if (l.trim() && !l.includes("Exchange") && !l.includes("Product Details") && !l.includes("SKU")) {
+                    productRow = l.trim(); break;
+                }
+            }
+        }
+        if (!productRow) return { valid: false, error: "Product row not found", pageType };
+        productRow = productRow.replace(/\n/g,' ').replace(/\s+/g,' ').trim();
+        const parsed = parseProductRow(productRow);
+        if (!parsed) return { valid: false, error: "Could not parse fields", pageType, rawRow: productRow };
+        return { valid: true, pageType, ...parsed };
+    }
+
+    async function detectPartner(page) {
+        const text = (await page.getTextContent()).items.map(i=>i.str).join(' ');
+        if (/Delhivery/i.test(text)) return 'Delhivery';
+        if (/Valmo\b/i.test(text)) return 'Valmo';
+        if (/Xpress\s*Bees|XpressBees/i.test(text)) return 'Xpress Bees';
+        if (/Shadowfax/i.test(text)) return 'Shadowfax';
+        if (/Valmo\s*Plus|ValmoPlus/i.test(text)) return 'ValmoPlus';
+        return 'Unknown';
+    }
+
+    function extractDate(items) {
+        const match = items.map(i=>i.str).join(' ').match(/\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\b/);
+        return match ? match[1] : new Date().toLocaleDateString('en-IN');
+    }
+
+    async function getCropBox(page) {
+    const viewport = page.getViewport({ scale: 1 });
+    const pageHeight = viewport.height;
+    const textContent = await page.getTextContent();
+
+    let topY = null;
+    let bottomY = null;
+    let hasTaxInvoice = false;
+    let productDetailsY = null;
+    let lowestContentY = null;
+
+    for (const item of textContent.items) {
+        const str = item.str.trim();
+        const y = item.transform[5];
+
+        if (str.length > 0) {
+            if (lowestContentY === null || y < lowestContentY) {
+                lowestContentY = y;
+            }
+        }
+
+        if (str.includes("Customer Address") && topY === null) {
+            topY = y;
+        }
+
+        if (str.includes("TAX INVOICE")) {
+            hasTaxInvoice = true;
+            bottomY = y - 8;
+        }
+
+        if (!hasTaxInvoice && str.includes("Product Details")) {
+            productDetailsY = y;
+        }
+    }
+
+    // Exchange labels (No TAX INVOICE)
+    if (!hasTaxInvoice && productDetailsY) {
+        bottomY = Math.max(lowestContentY - 15, 20);
+    }
+
+    if (!topY) topY = pageHeight - 80;
+
+    if (!bottomY) {
+        bottomY = Math.max(lowestContentY - 20, 20);
+    }
+
+    const cropTop = Math.min(topY, pageHeight - 20);
+    const cropBottom = Math.max(bottomY, 20);
+
+    return {
+        x: 0,
+        y: cropBottom,
+        width: viewport.width,
+        height: cropTop - cropBottom + 40
+    };
+}
+
+    let currentPdfBuffer = null, croppedPagesList = [], extractedRowsList = [];
+    let debugMode = false, debugMessages = [];
+
+    function addDebug(msg) { if (debugMode) { debugMessages.push(`[${new Date().toLocaleTimeString()}] ${msg}`); document.getElementById('debugContent').innerHTML = debugMessages.join('\n'); } }
+
+    (function init() {
+        const uploadZone = document.getElementById('meeshoUploadZone');
+        const fileInput = document.getElementById('meeshoFileInput');
+        const chooseBtn = document.getElementById('meeshoChooseBtn');
+        const progressBar = document.getElementById('progressBar');
+        const statusMsg = document.getElementById('statusMessage');
+        
+        function formatBytes(b) { if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+
+        async function processPDF(file) {
+            if (!file) return;
+            const startTime = Date.now();
+            document.getElementById('uploadSection').classList.add('hidden');
+            document.getElementById('processingStatus').classList.remove('hidden');
+            document.getElementById('resultsDashboard').classList.add('hidden');
+            debugMessages = []; if(debugMode) document.getElementById('debugContent').innerHTML = '';
+            addDebug(`Processing: ${file.name}`);
+            
+            const buffer = await file.arrayBuffer();
+            currentPdfBuffer = buffer;
+            const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+            const total = pdf.numPages;
+            progressBar.max = total;
+            
+            let partnerMap = { Delhivery:0, Valmo:0, 'Xpress Bees':0, Shadowfax:0, ValmoPlus:0, Unknown:0 };
+            extractedRowsList = [];
+            croppedPagesList = [];
+            let validCount = 0, reviewCount = 0;
+            
+            for (let i = 1; i <= total; i++) {
+                const pct = Math.round(i/total*100);
+                progressBar.value = i;
+                document.getElementById('progressPercent').innerText = pct+'%';
+                document.getElementById('currentPageNum').innerText = i;
+                document.getElementById('validCount').innerText = validCount;
+                document.getElementById('reviewCount').innerText = reviewCount;
+                const elapsed = (Date.now()-startTime)/1000;
+                const remaining = elapsed / i * (total - i);
+                document.getElementById('timeRemaining').innerHTML = remaining > 60 ? Math.round(remaining/60)+'m' : Math.round(remaining)+'s';
+                statusMsg.innerText = `Processing page ${i} of ${total}...`;
+                
+                const page = await pdf.getPage(i);
+                const partner = await detectPartner(page);
+                partnerMap[partner] = (partnerMap[partner]||0)+1;
+                const extraction = await extractFromPage(page, i, addDebug);
+                const date = extractDate((await page.getTextContent()).items);
+                
+                let row = { Page: i, Partner: partner, Type: extraction.pageType || '?', SKU: 'REVIEW', Size: 'REVIEW', Quantity: 'REVIEW', Color: 'REVIEW', 'Order No.': 'REVIEW', Status: 'Review' };
+                if (extraction.valid) {
+                    row = { Page: i, Partner: partner, Type: extraction.pageType, SKU: extraction.sku, Size: extraction.size, Quantity: extraction.qty, Color: extraction.color, 'Order No.': extraction.orderNo, Status: 'Valid' };
+                    validCount++;
+                } else {
+                    reviewCount++;
+                    addDebug(`Page ${i}: ${extraction.error}`);
+                }
+                extractedRowsList.push(row);
+                
+                const crop = await getCropBox(page);
+                croppedPagesList.push({ pageIndex: i-1, cropBox: crop });
+            }
+            
+            const elapsedSec = ((Date.now()-startTime)/1000).toFixed(1);
+            document.getElementById('resultTotalPages').innerText = total;
+            document.getElementById('resultValid').innerText = validCount;
+            document.getElementById('resultReview').innerText = reviewCount;
+            const uniquePartners = Object.values(partnerMap).filter(c=>c>0).length;
+            document.getElementById('resultPartners').innerText = uniquePartners;
+            document.getElementById('resultTime').innerHTML = elapsedSec+'s';
+            
+            const partnerGrid = document.getElementById('partnerGrid');
+            partnerGrid.innerHTML = '';
+            for (let [p,c] of Object.entries(partnerMap)) {
+                if(c>0) partnerGrid.innerHTML += `<div class="bg-gray-50 rounded-xl p-3 text-center border border-gray-100"><div class="font-bold text-xl text-gray-800">${c}</div><div class="text-xs text-gray-500">${p}</div></div>`;
+            }
+            
+            document.getElementById('processingStatus').classList.add('hidden');
+            document.getElementById('resultsDashboard').classList.remove('hidden');
+            document.getElementById('uploadSection').classList.remove('hidden');
+            statusMsg.innerText = `✅ Complete! ${validCount} valid, ${reviewCount} review.`;
+            addDebug(`Finished in ${elapsedSec}s. Valid: ${validCount}, Review: ${reviewCount}`);
+            
+            window.exportData = extractedRowsList;
+            window.cropExport = { buffer: currentPdfBuffer, pages: croppedPagesList };
+        }
+        
+        async function downloadCroppedPDF() {
+            if (!window.cropExport) { alert('No processed PDF available.'); return; }
+            const src = await PDFDocument.load(window.cropExport.buffer);
+            const out = await PDFDocument.create();
+            for (let p of window.cropExport.pages) {
+                const [copied] = await out.copyPages(src, [p.pageIndex]);
+                const c = p.cropBox;
+                copied.setCropBox(c.x, c.y, c.x + c.width, c.y + c.height);
+                out.addPage(copied);
+            }
+            const bytes = await out.save();
+            saveAs(new Blob([bytes], { type: 'application/pdf' }), `cropped_labels_${Date.now()}.pdf`);
+        }
+        
+        function generateExcel() {
+            const validRows = window.exportData.filter(r => r.Status === 'Valid');
+            if (validRows.length === 0) { alert('No valid rows to export.'); return; }
+            const exportRows = validRows.map(r => ({ Page: r.Page, Partner: r.Partner, Type: r.Type, SKU: r.SKU, Size: r.Size, Quantity: r.Quantity, Color: r.Color, 'Order No.': r['Order No.'], Status: r.Status }));
+            const ws = XLSX.utils.json_to_sheet(exportRows);
+            ws['!cols'] = [{wch:8},{wch:14},{wch:6},{wch:35},{wch:10},{wch:8},{wch:12},{wch:22},{wch:8}];
+            ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+            const range = XLSX.utils.decode_range(ws['!ref']||'A1:I1');
+            for(let R=range.s.r; R<=range.e.r; R++) {
+                const cell = ws[XLSX.utils.encode_cell({r:R,c:8})];
+                if(cell && cell.v === 'Valid') cell.s = { fill: { fgColor: { rgb: "C6F7D0" } }, font: { bold: false } };
+                if(cell && cell.v === 'Review') cell.s = { fill: { fgColor: { rgb: "FEF3C7" } } };
+            }
+            const partnerSum = {};
+            window.exportData.forEach(r => partnerSum[r.Partner] = (partnerSum[r.Partner]||0)+1);
+            const partnerSheet = XLSX.utils.json_to_sheet(Object.entries(partnerSum).map(([p,c])=>({ Partner: p, Count: c })));
+            const statsSheet = XLSX.utils.json_to_sheet([
+                { Metric: 'Total Pages', Value: window.exportData.length },
+                { Metric: 'Valid Orders', Value: validRows.length },
+                { Metric: 'Review Required', Value: window.exportData.length - validRows.length },
+                { Metric: 'Success Rate', Value: ((validRows.length/window.exportData.length)*100).toFixed(1)+'%' }
+            ]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Orders');
+            XLSX.utils.book_append_sheet(wb, partnerSheet, 'Partner Summary');
+            XLSX.utils.book_append_sheet(wb, statsSheet, 'Statistics');
+            XLSX.writeFile(wb, `label_extract_${Date.now()}.xlsx`);
+        }
+        
+        chooseBtn.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+        uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); if(e.dataTransfer.files[0]) processPDF(e.dataTransfer.files[0]); });
+        fileInput.addEventListener('change', e => { if(e.target.files[0]) processPDF(e.target.files[0]); fileInput.value = ''; });
+        document.getElementById('downloadPdfBtn').onclick = downloadCroppedPDF;
+        document.getElementById('downloadExcelBtn').onclick = generateExcel;
+        
+        const debugBtn = document.getElementById('debugToggleBtn');
+        const debugPanel = document.getElementById('debugPanel');
+        debugBtn.onclick = () => { debugMode = !debugMode; debugPanel.classList.toggle('hidden'); if(debugMode) document.getElementById('debugContent').innerHTML = debugMessages.join('\n') || 'Debug mode enabled.'; };
+        document.getElementById('clearDebugBtn').onclick = () => { debugMessages = []; document.getElementById('debugContent').innerHTML = ''; };
+        document.getElementById('darkModeToggle').onclick = () => document.body.classList.toggle('dark');
+    })();
+</script>
+</body>
+</html>
