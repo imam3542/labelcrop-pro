@@ -28,6 +28,26 @@
         .dark .bg-gray-50 { background-color: #0f172a; }
         .dark .border-gray-100 { border-color: #334155; }
         .dark .stat-card { background: #1e293b; border-color: #334155; }
+        .sort-selector {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #1f2937;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .sort-selector:hover {
+            border-color: #cbd5e1;
+            background: #faf5ff;
+        }
+        .sort-selector:focus {
+            outline: none;
+            border-color: #7C3AED;
+            ring: 2px solid #7C3AED;
+        }
     </style>
 </head>
 <body>
@@ -306,9 +326,26 @@ SKU • Size • Qty • Color • Order No • Courier Partner
                 <div id="partnerGrid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
             </div>
 
-            <!-- Download Section -->
+            <!-- Download Section with Sort Dropdown -->
             <div class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-2xl p-6 border border-purple-200">
                 <h3 class="font-semibold text-gray-800 mb-4 text-center md:text-left">Download Extracted Data</h3>
+                
+                <!-- Sort Selector UI - New Feature -->
+                <div class="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/60 rounded-xl p-4">
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-arrow-down-wide-short text-purple-600"></i>
+                        <span class="text-sm font-medium text-gray-700">Sort Orders By:</span>
+                        <select id="sortOption" class="sort-selector">
+                            <option value="none">No Sorting (Default)</option>
+                            <option value="sku">SKU (A → Z)</option>
+                            <option value="partner">Partner (A → Z)</option>
+                        </select>
+                    </div>
+                    <div class="text-xs text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
+                        <i class="fas fa-info-circle mr-1"></i> Sorting applies to both PDF & Excel
+                    </div>
+                </div>
+                
                 <div class="flex flex-col sm:flex-row gap-4 justify-center">
                     <button id="downloadPdfBtn" class="flex-1 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition shadow-md btn-primary text-center">
                         <i class="fas fa-cut mr-2"></i> Download Labels PDF
@@ -454,64 +491,53 @@ SKU • Size • Qty • Color • Order No • Courier Partner
     }
 
     async function getCropBox(page) {
-    const viewport = page.getViewport({ scale: 1 });
-    const pageHeight = viewport.height;
-    const textContent = await page.getTextContent();
-
-    let topY = null;
-    let bottomY = null;
-    let hasTaxInvoice = false;
-    let productDetailsY = null;
-    let lowestContentY = null;
-
-    for (const item of textContent.items) {
-        const str = item.str.trim();
-        const y = item.transform[5];
-
-        if (str.length > 0) {
-            if (lowestContentY === null || y < lowestContentY) {
-                lowestContentY = y;
+        const viewport = page.getViewport({ scale: 1 });
+        const pageHeight = viewport.height;
+        const textContent = await page.getTextContent();
+        let topY = null;
+        let bottomY = null;
+        let hasTaxInvoice = false;
+        let productDetailsY = null;
+        let lowestContentY = null;
+        for (const item of textContent.items) {
+            const str = item.str.trim();
+            const y = item.transform[5];
+            if (str.length > 0) {
+                if (lowestContentY === null || y < lowestContentY) {
+                    lowestContentY = y;
+                }
+            }
+            if (str.includes("Customer Address") && topY === null) {
+                topY = y;
+            }
+            if (str.includes("TAX INVOICE")) {
+                hasTaxInvoice = true;
+                bottomY = y - 8;
+            }
+            if (!hasTaxInvoice && str.includes("Product Details")) {
+                productDetailsY = y;
             }
         }
-
-        if (str.includes("Customer Address") && topY === null) {
-            topY = y;
+        if (!hasTaxInvoice && productDetailsY) {
+            bottomY = Math.max(lowestContentY - 15, 20);
         }
-
-        if (str.includes("TAX INVOICE")) {
-            hasTaxInvoice = true;
-            bottomY = y - 8;
+        if (!topY) topY = pageHeight - 80;
+        if (!bottomY) {
+            bottomY = Math.max(lowestContentY - 20, 20);
         }
-
-        if (!hasTaxInvoice && str.includes("Product Details")) {
-            productDetailsY = y;
-        }
+        const cropTop = Math.min(topY, pageHeight - 20);
+        const cropBottom = Math.max(bottomY, 20);
+        return {
+            x: 0,
+            y: cropBottom,
+            width: viewport.width,
+            height: cropTop - cropBottom + 40
+        };
     }
-
-    // Exchange labels (No TAX INVOICE)
-    if (!hasTaxInvoice && productDetailsY) {
-        bottomY = Math.max(lowestContentY - 15, 20);
-    }
-
-    if (!topY) topY = pageHeight - 80;
-
-    if (!bottomY) {
-        bottomY = Math.max(lowestContentY - 20, 20);
-    }
-
-    const cropTop = Math.min(topY, pageHeight - 20);
-    const cropBottom = Math.max(bottomY, 20);
-
-    return {
-        x: 0,
-        y: cropBottom,
-        width: viewport.width,
-        height: cropTop - cropBottom + 40
-    };
-}
 
     let currentPdfBuffer = null, croppedPagesList = [], extractedRowsList = [];
     let debugMode = false, debugMessages = [];
+    let selectedSortOption = 'none';
 
     function addDebug(msg) { if (debugMode) { debugMessages.push(`[${new Date().toLocaleTimeString()}] ${msg}`); document.getElementById('debugContent').innerHTML = debugMessages.join('\n'); } }
 
@@ -573,7 +599,7 @@ SKU • Size • Qty • Color • Order No • Courier Partner
                 extractedRowsList.push(row);
                 
                 const crop = await getCropBox(page);
-                croppedPagesList.push({ pageIndex: i-1, cropBox: crop });
+                croppedPagesList.push({ pageIndex: i-1, cropBox: crop, rowData: row });
             }
             
             const elapsedSec = ((Date.now()-startTime)/1000).toFixed(1);
@@ -600,13 +626,52 @@ SKU • Size • Qty • Color • Order No • Courier Partner
             window.cropExport = { buffer: currentPdfBuffer, pages: croppedPagesList };
         }
         
+        function getSortedValidIndices(rows, pages) {
+            const sortOption = document.getElementById('sortOption').value;
+            if (sortOption === 'none') return null;
+            const validIndices = [];
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i].Status === 'Valid') {
+                    validIndices.push(i);
+                }
+            }
+            if (sortOption === 'sku') {
+                validIndices.sort((a, b) => (rows[a].SKU || '').localeCompare(rows[b].SKU || ''));
+            } else if (sortOption === 'partner') {
+                validIndices.sort((a, b) => (rows[a].Partner || '').localeCompare(rows[b].Partner || ''));
+            }
+            return validIndices;
+        }
+        
         async function downloadCroppedPDF() {
             if (!window.cropExport) { alert('No processed PDF available.'); return; }
             const src = await PDFDocument.load(window.cropExport.buffer);
             const out = await PDFDocument.create();
-            for (let p of window.cropExport.pages) {
-                const [copied] = await out.copyPages(src, [p.pageIndex]);
-                const c = p.cropBox;
+            const sortOption = document.getElementById('sortOption').value;
+            let pageOrderIndices = [];
+            if (sortOption !== 'none') {
+                const sortedValidIndices = getSortedValidIndices(window.exportData, window.cropExport.pages);
+                if (sortedValidIndices) {
+                    const usedIndices = new Set(sortedValidIndices);
+                    pageOrderIndices = [...sortedValidIndices];
+                    for (let i = 0; i < window.exportData.length; i++) {
+                        if (!usedIndices.has(i)) {
+                            pageOrderIndices.push(i);
+                        }
+                    }
+                    addDebug(`PDF Sort: ${sortOption} | Page order: ${pageOrderIndices.join(',')}`);
+                } else {
+                    pageOrderIndices = [...Array(window.exportData.length).keys()];
+                }
+            } else {
+                pageOrderIndices = [...Array(window.exportData.length).keys()];
+                addDebug(`PDF: No sorting applied`);
+            }
+            for (let idx of pageOrderIndices) {
+                const pageData = window.cropExport.pages[idx];
+                if (!pageData) continue;
+                const [copied] = await out.copyPages(src, [pageData.pageIndex]);
+                const c = pageData.cropBox;
                 copied.setCropBox(c.x, c.y, c.x + c.width, c.y + c.height);
                 out.addPage(copied);
             }
@@ -614,33 +679,143 @@ SKU • Size • Qty • Color • Order No • Courier Partner
             saveAs(new Blob([bytes], { type: 'application/pdf' }), `cropped_labels_${Date.now()}.pdf`);
         }
         
-        function generateExcel() {
-            const validRows = window.exportData.filter(r => r.Status === 'Valid');
+                function generateExcel() {
+            const sortOption = document.getElementById('sortOption').value;
+            let validRows = window.exportData.filter(r => r.Status === 'Valid');
             if (validRows.length === 0) { alert('No valid rows to export.'); return; }
-            const exportRows = validRows.map(r => ({ Page: r.Page, Partner: r.Partner, Type: r.Type, SKU: r.SKU, Size: r.Size, Quantity: r.Quantity, Color: r.Color, 'Order No.': r['Order No.'], Status: r.Status }));
-            const ws = XLSX.utils.json_to_sheet(exportRows);
-            ws['!cols'] = [{wch:8},{wch:14},{wch:6},{wch:35},{wch:10},{wch:8},{wch:12},{wch:22},{wch:8}];
-            ws['!freeze'] = { xSplit: 0, ySplit: 1 };
-            const range = XLSX.utils.decode_range(ws['!ref']||'A1:I1');
+            
+            let sortedValidRows = [...validRows];
+            if (sortOption === 'sku') {
+                sortedValidRows.sort((a, b) => (a.SKU || '').localeCompare(b.SKU || ''));
+            } else if (sortOption === 'partner') {
+                sortedValidRows.sort((a, b) => (a.Partner || '').localeCompare(b.Partner || ''));
+            }
+            
+            const exportRows = sortedValidRows.map((r, index) => {
+                if (sortOption !== 'none') {
+                    return { Page: index + 1, Partner: r.Partner, Type: r.Type, SKU: r.SKU, Size: r.Size, Quantity: r.Quantity, Color: r.Color, 'Order No.': r['Order No.'], Status: r.Status };
+                } else {
+                    return { Page: r.Page, Partner: r.Partner, Type: r.Type, SKU: r.SKU, Size: r.Size, Quantity: r.Quantity, Color: r.Color, 'Order No.': r['Order No.'], Status: r.Status };
+                }
+            });
+            
+            // IMPROVED PACKING SUMMARY - Warehouse friendly
+            const packingMap = new Map();
+            for (const row of sortedValidRows) {
+                const sku = row.SKU || '';
+                const size = row.Size || '';
+                const color = row.Color || '';
+                const qty = row.Quantity || 0;
+                const key = `${sku}||${size}||${color}`;
+                if (packingMap.has(key)) {
+                    const existing = packingMap.get(key);
+                    existing.ordersCount += 1;
+                    existing.totalQuantity += qty;
+                } else {
+                    packingMap.set(key, {
+                        SKU: sku,
+                        Size: size,
+                        Color: color,
+                        ordersCount: 1,
+                        totalQuantity: qty
+                    });
+                }
+            }
+            
+            // Convert to array and add priority
+            let packingRows = Array.from(packingMap.values()).map(item => {
+                let priority = '';
+                let priorityIcon = '';
+                if (item.totalQuantity >= 5) {
+                    priority = 'High';
+                    priorityIcon = '🔥';
+                } else if (item.totalQuantity >= 2) {
+                    priority = 'Medium';
+                    priorityIcon = '⚡';
+                } else {
+                    priority = 'Single';
+                    priorityIcon = '✓';
+                }
+                return {
+                    'Priority': `${priorityIcon} ${priority}`,
+                    'SKU': item.SKU,
+                    'Size': item.Size,
+                    'Color': item.Color,
+                    'Orders Count': item.ordersCount,
+                    'Total Quantity': item.totalQuantity
+                };
+            });
+            
+            // Sort by Total Quantity descending
+            packingRows.sort((a, b) => {
+                const qtyA = a['Total Quantity'] || 0;
+                const qtyB = b['Total Quantity'] || 0;
+                return qtyB - qtyA;
+            });
+            
+            // Calculate summary stats
+            const totalOrders = packingRows.reduce((sum, r) => sum + (r['Orders Count'] || 0), 0);
+            const totalUnits = packingRows.reduce((sum, r) => sum + (r['Total Quantity'] || 0), 0);
+            
+            // Create summary rows as a separate small table above main data
+            const packingSheetData = [
+    ['📊 PACKING SUMMARY REPORT'],
+    [''],
+    ['Total Orders:', totalOrders],
+    ['Total Units:', totalUnits],
+    [''],
+    ['Priority', 'SKU', 'Size', 'Color', 'Orders Count', 'Total Quantity'],
+    ...packingRows.map(r => [
+        r.Priority,
+        r.SKU,
+        r.Size,
+        r.Color,
+        r['Orders Count'],
+        r['Total Quantity']
+    ])
+];
+            
+            const wsPacking = XLSX.utils.aoa_to_sheet(packingSheetData);
+            
+            // Set column widths
+            wsPacking['!cols'] = [
+                { wch: 12 },  // Priority
+                { wch: 40 },  // SKU
+                { wch: 12 },  // Size
+                { wch: 15 },  // Color
+                { wch: 15 },  // Orders Count
+                { wch: 15 }   // Total Quantity
+            ];
+            
+            const wsOrders = XLSX.utils.json_to_sheet(exportRows);
+            wsOrders['!cols'] = [{wch:8},{wch:14},{wch:6},{wch:35},{wch:10},{wch:8},{wch:12},{wch:22},{wch:8}];
+            wsOrders['!freeze'] = { xSplit: 0, ySplit: 1 };
+            const range = XLSX.utils.decode_range(wsOrders['!ref']||'A1:I1');
             for(let R=range.s.r; R<=range.e.r; R++) {
-                const cell = ws[XLSX.utils.encode_cell({r:R,c:8})];
+                const cell = wsOrders[XLSX.utils.encode_cell({r:R,c:8})];
                 if(cell && cell.v === 'Valid') cell.s = { fill: { fgColor: { rgb: "C6F7D0" } }, font: { bold: false } };
                 if(cell && cell.v === 'Review') cell.s = { fill: { fgColor: { rgb: "FEF3C7" } } };
             }
+            
             const partnerSum = {};
             window.exportData.forEach(r => partnerSum[r.Partner] = (partnerSum[r.Partner]||0)+1);
             const partnerSheet = XLSX.utils.json_to_sheet(Object.entries(partnerSum).map(([p,c])=>({ Partner: p, Count: c })));
+            
             const statsSheet = XLSX.utils.json_to_sheet([
                 { Metric: 'Total Pages', Value: window.exportData.length },
-                { Metric: 'Valid Orders', Value: validRows.length },
-                { Metric: 'Review Required', Value: window.exportData.length - validRows.length },
-                { Metric: 'Success Rate', Value: ((validRows.length/window.exportData.length)*100).toFixed(1)+'%' }
+                { Metric: 'Valid Orders', Value: sortedValidRows.length },
+                { Metric: 'Review Required', Value: window.exportData.length - sortedValidRows.length },
+                { Metric: 'Success Rate', Value: ((sortedValidRows.length/window.exportData.length)*100).toFixed(1)+'%' }
             ]);
+            
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Orders');
+            XLSX.utils.book_append_sheet(wb, wsOrders, 'Orders');
             XLSX.utils.book_append_sheet(wb, partnerSheet, 'Partner Summary');
             XLSX.utils.book_append_sheet(wb, statsSheet, 'Statistics');
+            XLSX.utils.book_append_sheet(wb, wsPacking, 'Packing Summary');
+            
             XLSX.writeFile(wb, `label_extract_${Date.now()}.xlsx`);
+            addDebug(`Excel exported with ${exportRows.length} orders, ${packingRows.length} packing groups`);
         }
         
         chooseBtn.addEventListener('click', () => fileInput.click());
@@ -656,7 +831,6 @@ SKU • Size • Qty • Color • Order No • Courier Partner
         const debugPanel = document.getElementById('debugPanel');
         debugBtn.onclick = () => { debugMode = !debugMode; debugPanel.classList.toggle('hidden'); if(debugMode) document.getElementById('debugContent').innerHTML = debugMessages.join('\n') || 'Debug mode enabled.'; };
         document.getElementById('clearDebugBtn').onclick = () => { debugMessages = []; document.getElementById('debugContent').innerHTML = ''; };
-        document.getElementById('darkModeToggle').onclick = () => document.body.classList.toggle('dark');
     })();
 </script>
 <footer style="
